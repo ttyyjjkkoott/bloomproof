@@ -1,4 +1,5 @@
 import generatedEntries from '../data/entries.generated.json'
+import { sanitizeEntry } from './sanitize.js'
 
 const LOCAL_KEY = 'bloom-proof-submissions-v1'
 
@@ -15,8 +16,13 @@ function writeLocal(rows) {
   localStorage.setItem(LOCAL_KEY, JSON.stringify(rows))
 }
 
+// Render-time sanitization (the build-time pass lives in generate-data):
+// every entry is re-sanitized on load, so tampered localStorage drafts and
+// any future entry source get the same treatment — tag-shaped markup is
+// stripped from text and only http(s) URLs survive. Idempotent with the
+// build pass, so prerendered HTML and hydrated HTML always agree.
 function toEntry(row) {
-  return {
+  return sanitizeEntry({
     id: row.id,
     number: row.number || '—',
     title: row.title,
@@ -33,7 +39,7 @@ function toEntry(row) {
     kind: row.kind || 'live',
     status: row.status || 'published',
     createdAt: row.createdAt || new Date().toISOString()
-  }
+  })
 }
 
 // Published entries from the markdown record. Synchronous and identical on

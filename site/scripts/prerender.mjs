@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { escapeHtml, escapeAttr, safeJson } from '../src/lib/sanitize.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const siteDir = join(here, '..')
@@ -48,19 +49,11 @@ function fillOnce(haystack, needle, replacement, what) {
   return parts.join(replacement)
 }
 
-// React's HTML escaping for text nodes (used to verify renders).
-function reactEsc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/'/g, '&#x27;')
-    .replace(/"/g, '&quot;')
-}
-
-function attrEsc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
-}
+// Page-head escaping comes from the shared sanitizer (sanitize.js), so the
+// prerender build script and the client render path can never disagree:
+// escapeHtml for <title> text, escapeAttr for meta/OG content attributes.
+// Entry content can never break out of those tags — every &, <, >, and "
+// is entity-encoded, and attribute values are collapsed to a single line.
 
 // 1. SSR bundle (vite binary resolved explicitly — no PATH or shell needed).
 const viteBin = join(siteDir, 'node_modules', 'vite', 'bin', 'vite.js')
@@ -150,7 +143,7 @@ for (const e of entries) {
     title: `${e.title} — Bloom Proof`,
     desc: e.problem,
     type: 'article',
-    expect: reactEsc(e.title)
+    expect: escapeHtml(e.title)
   })
 }
 const notFound = {
@@ -177,18 +170,28 @@ function buildPage(page) {
   }
   if (html.includes('Gathering real stories')) fail(`route ${page.route} rendered the loading shell`)
   const og = [
-    `<meta property="og:title" content="${attrEsc(page.title)}">`,
-    `<meta property="og:description" content="${attrEsc(page.desc)}">`,
+    `<meta property="og:title" content="${escapeAttr(page.title)}">`,
+    `<meta property="og:description" content="${escapeAttr(page.desc)}">`,
     `<meta property="og:type" content="${page.type}">`,
-    `<meta property="og:url" content="${SITE}${page.route === '/' ? '/' : page.route}">`,
+    `<meta property="og:url" content="${escapeAttr(SITE + (page.route === '/' ? '/' : page.route))}">`,
     `<meta property="og:image" content="${SITE}/site-logo.png">`
   ].join('\n    ')
   let out = fillOnce(template, '<div id="root"></div>', `<div id="root">${html}</div>`, 'root div')
-  out = fillOnce(out, titleTag, `<title>${reactEsc(page.title)}</title>`, 'title tag')
+  out = fillOnce(out, titleTag, `<title>${escapeHtml(page.title)}</title>`, 'title tag')
   if (!page.keepDesc) {
-    out = fillOnce(out, descTag, `<meta name="description" content="${attrEsc(page.desc)}">`, 'meta description')
+    out = fillOnce(out, descTag, `<meta name="description" content="${escapeAttr(page.desc)}">`, 'meta description')
   }
   out = fillOnce(out, '\n  </head>', `\n    ${og}\n  </head>`, 'head close')
+  // Fail-closed injection tripwires: hostile entry markdown must never add a
+  // script element or an executable-URL link to a prerendered page. The only
+  // <script> is the bundle tag from index.html; href/src may only be http(s),
+  // same-origin, anchor, or mailto — never javascript:/data:/vbscript:.
+  if (out.split('<script').length - 1 !== template.split('<script').length - 1) {
+    fail(`route ${page.route} emitted an unexpected <script> element — refusing to ship a possible breakout`)
+  }
+  if (/<(a|img|link)\b[^>]*(href|src)\s*=\s*["']?\s*(javascript|data|vbscript|file|blob):/i.test(out)) {
+    fail(`route ${page.route} emitted a blocked-URL href/src — refusing to ship a possible XSS`)
+  }
   const dest = join(outDir, page.file)
   mkdirSync(dirname(dest), { recursive: true })
   writeFileSync(dest, out)
@@ -208,9 +211,11 @@ writeFileSync(
 if (!existsSync(join(outDir, 'robots.txt'))) {
   writeFileSync(join(outDir, 'robots.txt'), `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`)
 }
+// safeJson: a literal "</script" in entry text stays inert even if this file
+// is ever inlined into a <script> element; JSON.parse reads back the values.
 writeFileSync(
   join(outDir, 'search-index.json'),
-  JSON.stringify(entries.map((e) => ({ id: e.id, title: e.title, summary: e.problem, kind: e.kind })))
+  safeJson(entries.map((e) => ({ id: e.id, title: e.title, summary: e.problem, kind: e.kind })))
 )
 
 // 5. Cleanup.

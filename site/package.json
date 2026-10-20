@@ -9,16 +9,18 @@
     "prebuild": "node scripts/generate-data.mjs",
     "build": "vite build",
     "postbuild": "node scripts/prerender.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test \"test/*.test.mjs\""
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
+    "react-router": "^7.18.4",
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.1.2",
     "qrcode": "^1.5.4",
-    "vite": "^5.4.11"
+    "vite": "^8.3.4"
   }
 }

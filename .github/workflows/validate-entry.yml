@@ -24,21 +24,62 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           python3 - <<'EOF'
+          import ipaddress
           import os
           import re
+          import socket
           import subprocess
+          import urllib.error
+          import urllib.parse
           import urllib.request
 
           REQUIRED = ['Problem', 'Solution', 'Artifact', 'Human', 'License']
           UA = {'User-Agent': 'Mozilla/5.0 (compatible; BloomProofValidator/1.0)'}
 
+          # SSRF guard: PR-submitted URLs are untrusted. Resolve every host
+          # before fetching and refuse private/internal addresses outright —
+          # loopback, link-local (including the 169.254.169.254 cloud metadata
+          # endpoint), RFC 1918, and other non-public ranges. Redirect targets
+          # are re-checked the same way, so a public URL cannot bounce the
+          # checker into the internal network. A blocked URL fails the check
+          # loudly instead of being fetched.
+          def host_blocked(url):
+              try:
+                  host = urllib.parse.urlparse(url).hostname
+              except Exception:
+                  return 'BLOCKED private/internal address: unparseable URL'
+              if not host:
+                  return 'BLOCKED private/internal address: missing hostname'
+              try:
+                  infos = socket.getaddrinfo(host, None)
+              except socket.gaierror as e:
+                  return f'DNS resolution failed: {e}'
+              for info in infos:
+                  ip = ipaddress.ip_address(info[4][0])
+                  if (ip.is_loopback or ip.is_link_local or ip.is_private
+                          or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+                      return f'BLOCKED private/internal address: {host} resolves to {ip}'
+              return None
+
+          class BlockPrivateRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  reason = host_blocked(urllib.parse.urljoin(req.full_url, newurl))
+                  if reason is not None:
+                      raise urllib.error.URLError(reason)
+                  return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+          _opener = urllib.request.build_opener(BlockPrivateRedirect())
+
           def clean(raw):
               return raw.rstrip('.,;:!?\'"*_~)')
 
           def fetch(url):
+              reason = host_blocked(url)
+              if reason is not None:
+                  return None, reason
               try:
                   req = urllib.request.Request(url, headers=UA, method='GET')
-                  with urllib.request.urlopen(req, timeout=20) as resp:
+                  with _opener.open(req, timeout=20) as resp:
                       return resp.status, None
               except Exception as e:
                   return None, f'{type(e).__name__}: {e}'

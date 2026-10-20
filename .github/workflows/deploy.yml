@@ -61,6 +61,14 @@ jobs:
         working-directory: site
         run: npm ci
 
+      - name: Audit dependencies
+        working-directory: site
+        run: npm audit --audit-level=moderate
+
+      - name: Run tests
+        working-directory: site
+        run: npm test
+
       - name: Build
         working-directory: site
         run: npm run build

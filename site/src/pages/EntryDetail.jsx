@@ -1,5 +1,6 @@
 import { useParams, Link } from 'react-router-dom'
 import { StatusBadge, EntryBadge } from '../components/Ledger.jsx'
+import { safeUrl } from '../lib/sanitize.js'
 
 const typeHint = {
   repo: 'The full project files, shared openly.',
@@ -21,7 +22,13 @@ export default function EntryDetail({ entries }) {
       </div>
     )
   }
-  const isImage = /\.(png|jpe?g|gif|webp|avif)$/i.test(entry.attachmentUrl || '')
+  // Sink-level URL check: entries arrive store-sanitized, but href/src are
+  // re-validated here so no future caller can pass a javascript:/data: URL to
+  // the DOM. Blocked links fall back to '#'; blocked attachments hide.
+  const artifactHref = safeUrl(entry.artifactUrl) || '#'
+  const attachmentHref = safeUrl(entry.attachmentUrl)
+  const extraLinks = (entry.extraLinks || []).filter((l) => safeUrl(l.url))
+  const isImage = /\.(png|jpe?g|gif|webp|avif)$/i.test(attachmentHref)
   return (
     <article style={{ paddingTop: 28 }}>
       <p className="ledger-meta">
@@ -69,29 +76,29 @@ export default function EntryDetail({ entries }) {
               <dt>Shared as</dt>
               <dd>{entry.artifactLicense}</dd>
             </dl>
-            <a className="btn btn-primary" href={entry.artifactUrl} target="_blank" rel="noreferrer">
+            <a className="btn btn-primary" href={artifactHref} target="_blank" rel="noreferrer">
               Open the project
             </a>
             <p style={{ fontSize: 13, marginTop: 10, marginBottom: 0 }}>
-              <a href={entry.artifactUrl} target="_blank" rel="noreferrer">
-                {entry.artifactUrl}
+              <a href={artifactHref} target="_blank" rel="noreferrer">
+                {artifactHref}
               </a>
             </p>
-            {(entry.extraLinks || []).map((l) => (
+            {extraLinks.map((l) => (
               <p key={l.url} style={{ fontSize: 14, marginTop: 10, marginBottom: 0 }}>
-                <a href={l.url} target="_blank" rel="noreferrer">
+                <a href={safeUrl(l.url)} target="_blank" rel="noreferrer">
                   {l.label} →
                 </a>
               </p>
             ))}
           </div>
-          {entry.attachmentUrl && (
+          {attachmentHref && (
             <div className="side-card">
               <h3>Photo or video</h3>
               {isImage ? (
-                <img className="attachment" src={entry.attachmentUrl} alt="Photo from the project" />
+                <img className="attachment" src={attachmentHref} alt="Photo from the project" />
               ) : (
-                <a href={entry.attachmentUrl} target="_blank" rel="noreferrer">
+                <a href={attachmentHref} target="_blank" rel="noreferrer">
                   Open the photo or video
                 </a>
               )}

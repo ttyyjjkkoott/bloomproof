@@ -9,6 +9,7 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sanitizeEntry, hasDangerousScheme, safeJson } from '../src/lib/sanitize.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const entriesDir = join(here, '..', '..', 'entries')
@@ -44,6 +45,13 @@ function firstUrl(text) {
 }
 
 function parseArtifact(file, section) {
+  // Build-time URL blocklist: javascript:, data:, and similar schemes in the
+  // Artifact section fail the build loudly instead of shipping a hostile link.
+  // (firstUrl below only ever extracts http(s) URLs, so this is the tripwire
+  // that makes a smuggled scheme visible rather than silently dropped.)
+  if (hasDangerousScheme(section)) {
+    fail(file, 'blocked URL scheme (javascript:/data:/vbscript:/file:/blob:) — links must be http(s)')
+  }
   const lines = section
     .split('\n')
     .map((l) => l.trim())
@@ -94,7 +102,10 @@ function parseEntry(filename) {
   if (!license) fail(filename, 'empty License section')
   const artifact = parseArtifact(filename, sectionOf(filename, raw, 'Artifact'))
   const human = parseHuman(filename, sectionOf(filename, raw, 'Human'))
-  return {
+  // Build-time sanitization (render-time re-checks live in store.js and the
+  // page components): strips tag-shaped markup from entry text — neutralizing
+  // event-handler attributes like onerror — and re-validates every URL.
+  return sanitizeEntry({
     id: number,
     number,
     title: titleMatch[1].trim(),
@@ -110,7 +121,7 @@ function parseEntry(filename) {
     attachmentUrl: '',
     origin: 'record',
     status: 'published'
-  }
+  })
 }
 
 const files = readdirSync(entriesDir, { withFileTypes: true })
@@ -120,5 +131,7 @@ const files = readdirSync(entriesDir, { withFileTypes: true })
 if (!files.length) fail('(entries)', 'no entries/NNN-*.md files found')
 const entries = files.map(parseEntry)
 mkdirSync(dirname(outFile), { recursive: true })
-writeFileSync(outFile, JSON.stringify(entries, null, 2) + '\n')
+// safeJson: identical values after JSON.parse, but a literal "</script" in
+// entry text can never break out, even if this file is ever inlined.
+writeFileSync(outFile, safeJson(entries, 2) + '\n')
 console.log(`generate-data: ${entries.length} entries → src/data/entries.generated.json`)

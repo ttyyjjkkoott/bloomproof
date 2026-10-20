@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { safeUrl } from '../lib/sanitize.js'
 
 export function StatusBadge({ status }) {
   if (status === 'pending') return <span className="badge badge-pending">In review</span>
@@ -15,7 +16,7 @@ export function EntryBadge({ entry, linked }) {
         : { cls: 'tag-live', text: 'See it live' }
   if (linked) {
     return (
-      <a className={`tag ${tier.cls}`} href={entry.artifactUrl} target="_blank" rel="noreferrer">
+      <a className={`tag ${tier.cls}`} href={safeUrl(entry.artifactUrl) || '#'} target="_blank" rel="noreferrer">
         {tier.text}
       </a>
     )
@@ -23,6 +24,8 @@ export function EntryBadge({ entry, linked }) {
   return <span className={`tag ${tier.cls}`}>{tier.text}</span>
 }
 
+// Search/browse results render entry text as React text nodes (textContent
+// semantics) — this file must never use innerHTML or dangerouslySetInnerHTML.
 export default function Ledger({ entries }) {
   if (!entries.length) {
     return <p>Nothing matches that search. Try simpler words — or be the first to share this story.</p>

@@ -2,7 +2,7 @@
 // Bundled with `vite build --ssr` and imported once per route by
 // scripts/prerender.mjs. Note: no CSS import — the client bundle owns styles.
 import { renderToString } from 'react-dom/server'
-import { StaticRouter } from 'react-router-dom/server'
+import { StaticRouter } from 'react-router'
 import { Site } from './App.jsx'
 import { loadPublishedSync } from './lib/store.js'
 
