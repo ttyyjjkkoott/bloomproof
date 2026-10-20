@@ -37,7 +37,16 @@ export function sanitizeText(value) {
 }
 
 export function stripTags(value) {
-  return sanitizeText(value).replace(TAG_RE, '')
+  // Fixpoint loop: a single pass leaves nested payloads behind
+  // ("<scr<script>ipt>" collapses to "<script>"), so repeat until the string
+  // stops changing. Each pass only removes matches, so this terminates.
+  let out = sanitizeText(value)
+  let prev
+  do {
+    prev = out
+    out = out.replace(TAG_RE, '')
+  } while (out !== prev)
+  return out
 }
 
 export function hasDangerousScheme(value) {

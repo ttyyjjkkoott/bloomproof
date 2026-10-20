@@ -31,6 +31,12 @@ describe('stripTags', () => {
   it('leaves plain comparisons alone', () => {
     assert.equal(stripTags('a < b and 3 > 2'), 'a < b and 3 > 2')
   })
+
+  it('repeats to a fixpoint so nested payloads cannot survive one pass', () => {
+    assert.equal(stripTags('<scr<script>ipt>alert(1)</scr</script>ipt>'), 'alert(1)')
+    const nestedImg = stripTags('<img <img src=x onerror=alert(1)> src=x onerror=alert(2)>')
+    assert.equal(nestedImg, '')
+  })
 })
 
 describe('hasDangerousScheme', () => {
